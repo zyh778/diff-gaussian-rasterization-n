@@ -189,6 +189,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float* depths,
 	float* cov3Ds,
 	float* rgb,
+	float3* normals,
 	float4* conic_opacity,
 	const dim3 grid,
 	uint32_t* tiles_touched,
@@ -256,6 +257,67 @@ __global__ void preprocessCUDA(int P, int D, int M,
 		rgb[idx * C + 2] = result.z;
 	}
 
+	// 计算法线向量
+	// 1. 归一化四元数
+	glm::vec4 quat = rotations[idx];
+	float quat_norm = sqrt(quat.x * quat.x + quat.y * quat.y + quat.z * quat.z + quat.w * quat.w);
+	quat = quat / quat_norm;
+	
+	// 2. 找到最小尺度轴（对应法线方向）
+	glm::vec3 scale = scales[idx];
+	int min_axis = 0;
+	if (scale.y < scale.x) min_axis = 1;
+	if (scale.z < scale[min_axis]) min_axis = 2;
+	
+	// 3. 创建单位向量（one-hot编码）
+	float3 unit_normal = {0.0f, 0.0f, 0.0f};
+	if (min_axis == 0) unit_normal.x = 1.0f;
+	else if (min_axis == 1) unit_normal.y = 1.0f;
+	else unit_normal.z = 1.0f;
+	
+	// 4. 将四元数转换为旋转矩阵并应用到法线
+	float w = quat.w, x = quat.x, y = quat.y, z = quat.z;
+	// 旋转矩阵的第一行、第二行、第三行
+	float3 rotated_normal;
+	rotated_normal.x = (1 - 2*y*y - 2*z*z) * unit_normal.x + (2*x*y - 2*w*z) * unit_normal.y + (2*x*z + 2*w*y) * unit_normal.z;
+	rotated_normal.y = (2*x*y + 2*w*z) * unit_normal.x + (1 - 2*x*x - 2*z*z) * unit_normal.y + (2*y*z - 2*w*x) * unit_normal.z;
+	rotated_normal.z = (2*x*z - 2*w*y) * unit_normal.x + (2*y*z + 2*w*x) * unit_normal.y + (1 - 2*x*x - 2*y*y) * unit_normal.z;
+	
+	// 5. 归一化法线
+	float normal_norm = sqrt(rotated_normal.x * rotated_normal.x + rotated_normal.y * rotated_normal.y + rotated_normal.z * rotated_normal.z);
+	rotated_normal.x /= normal_norm;
+	rotated_normal.y /= normal_norm;
+	rotated_normal.z /= normal_norm;
+	
+	// 6. 计算视线方向
+	float3 viewdir;
+	// 计算从高斯体中心点指向相机的视线方向向量
+	// 通过相机位置减去高斯体位置得到视线向量的三个分量
+	viewdir.x = cam_pos->x - p_orig.x;
+	viewdir.y = cam_pos->y - p_orig.y; 
+	viewdir.z = cam_pos->z - p_orig.z;
+	float viewdir_norm = sqrt(viewdir.x * viewdir.x + viewdir.y * viewdir.y + viewdir.z * viewdir.z);
+	viewdir.x /= viewdir_norm;
+	viewdir.y /= viewdir_norm;
+	viewdir.z /= viewdir_norm;
+	
+	// 7. 检查法线与视线方向的点积，如果为负则翻转法线
+	float dot_product = rotated_normal.x * viewdir.x + rotated_normal.y * viewdir.y + rotated_normal.z * viewdir.z;
+	if (dot_product < 0.0f) {
+		rotated_normal.x = -rotated_normal.x;
+		rotated_normal.y = -rotated_normal.y;
+		rotated_normal.z = -rotated_normal.z;
+	}
+	
+	// 8. 应用相机到世界的变换矩阵（viewmatrix的逆的转置，这里直接用viewmatrix的前3x3部分）
+	float3 world_normal;
+	world_normal.x = viewmatrix[0] * rotated_normal.x + viewmatrix[1] * rotated_normal.y + viewmatrix[2] * rotated_normal.z;
+	world_normal.y = viewmatrix[4] * rotated_normal.x + viewmatrix[5] * rotated_normal.y + viewmatrix[6] * rotated_normal.z;
+	world_normal.z = viewmatrix[8] * rotated_normal.x + viewmatrix[9] * rotated_normal.y + viewmatrix[10] * rotated_normal.z;
+	
+	// 9. 存储计算得到的法线
+	normals[idx] = world_normal;
+
 	// 存储辅助数据供后续使用
 	depths[idx] = p_view.z;
 	radii[idx] = my_radius;
@@ -274,6 +336,7 @@ renderCUDA(
 	int W, int H,
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
+	const float3* __restrict__ normals,
 	const float4* __restrict__ conic_opacity,
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
@@ -281,6 +344,7 @@ renderCUDA(
 	float* __restrict__ out_color,
 	const float* __restrict__ depth,
 	float* __restrict__ out_depth, 
+	float* __restrict__ out_normals,
 	float* __restrict__ out_opacity,
 	int * __restrict__ is_used)
 {
@@ -314,6 +378,7 @@ renderCUDA(
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
 	float D = 0.0f;
+	float3 N = {0.0f, 0.0f, 0.0f}; // 累积法线
 
 	// 迭代处理所有批次
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -360,11 +425,16 @@ renderCUDA(
 				continue;
 			}
 
-			// 累积颜色和深度值
+			// 累积颜色、深度和法线值
 			for (int ch = 0; ch < CHANNELS; ch++) {
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 			}
 			D += collected_depth[j] * alpha * T;
+			// 累积法线
+			float3 gaussian_normal = normals[collected_id[j]];
+			N.x += gaussian_normal.x * alpha * T;
+			N.y += gaussian_normal.y * alpha * T;
+			N.z += gaussian_normal.z * alpha * T;
 			// 记录高斯体被多少像素使用
 			if (test_T > 0.5f) {
 				atomicAdd(&(is_used[collected_id[j]]), 1);
@@ -384,6 +454,17 @@ renderCUDA(
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
 		}
 		out_depth[pix_id] = D;
+		// 输出法线（归一化后）
+		float normal_length = sqrt(N.x * N.x + N.y * N.y + N.z * N.z);
+		if (normal_length > 0.0f) {
+			out_normals[0 * H * W + pix_id] = N.x / normal_length;
+			out_normals[1 * H * W + pix_id] = N.y / normal_length;
+			out_normals[2 * H * W + pix_id] = N.z / normal_length;
+		} else {
+			out_normals[0 * H * W + pix_id] = 0.0f;
+			out_normals[1 * H * W + pix_id] = 0.0f;
+			out_normals[2 * H * W + pix_id] = 1.0f; // 默认向上法线
+		}
 		out_opacity[pix_id] = 1 - T;
 	}
 }
@@ -396,6 +477,7 @@ void FORWARD::render(
 	int W, int H,
 	const float2* means2D,
 	const float* colors,
+	const float3* normals,
 	const float4* conic_opacity,
 	float* final_T,
 	uint32_t* n_contrib,
@@ -403,6 +485,7 @@ void FORWARD::render(
 	float* out_color,
 	const float* depth,
 	float* out_depth, 
+	float* out_normals,
 	float* out_opacity,
 	int* is_used)
 {
@@ -412,6 +495,7 @@ void FORWARD::render(
 		W, H,
 		means2D,
 		colors,
+		normals,
 		conic_opacity,
 		final_T,
 		n_contrib,
@@ -419,6 +503,7 @@ void FORWARD::render(
 		out_color,
 		depth,
 		out_depth,
+		out_normals,
 		out_opacity,
 		is_used);
 }
@@ -445,6 +530,7 @@ void FORWARD::preprocess(int P, int D, int M,
 	float* depths,
 	float* cov3Ds,
 	float* rgb,
+	float3* normals,
 	float4* conic_opacity,
 	const dim3 grid,
 	uint32_t* tiles_touched,
@@ -472,6 +558,7 @@ void FORWARD::preprocess(int P, int D, int M,
 		depths,
 		cov3Ds,
 		rgb,
+		normals,
 		conic_opacity,
 		grid,
 		tiles_touched,

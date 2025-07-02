@@ -40,6 +40,7 @@ namespace FORWARD
 	 * - 坐标变换（世界空间到屏幕空间）
 	 * - 协方差矩阵计算
 	 * - 颜色计算（球谐函数或预计算颜色）
+	 * - 法线计算（基于最小尺度轴和旋转）
 	 * - 视锥体裁剪
 	 * - 瓦片覆盖计算
 	 * 
@@ -69,6 +70,7 @@ namespace FORWARD
 	 * @param depths 输出：高斯的深度值
 	 * @param cov3Ds 输出：3D协方差矩阵
 	 * @param colors 输出：计算得到的颜色
+	 * @param normals 输出：计算得到的法线向量
 	 * @param conic_opacity 输出：2D协方差的逆矩阵和不透明度
 	 * @param grid 瓦片网格维度
 	 * @param tiles_touched 输出：每个高斯覆盖的瓦片数量
@@ -95,6 +97,7 @@ namespace FORWARD
 		float* depths,
 		float* cov3Ds,
 		float* colors,
+		float3* normals,
 		float4* conic_opacity,
 		const dim3 grid,
 		uint32_t* tiles_touched,
@@ -138,6 +141,7 @@ namespace FORWARD
 		float* out_color,
 		const float* depth,
 	    float* out_depth,
+		float* out_normals,
 		float* out_opacity,
 		int* is_used);
 }
