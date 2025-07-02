@@ -163,7 +163,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         if raster_settings.debug:
             cpu_args = cpu_deep_copy_tuple(args)  # 在参数可能被破坏之前复制它们
             try:
-                num_rendered, color, normal, radii, geomBuffer, binningBuffer, imgBuffer, depth, opacity, is_used = (
+                num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer, depth, normal, opacity, is_used = (
                     _C.rasterize_gaussians(*args)
                 )
             except Exception as ex:
@@ -171,7 +171,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 print("\n前向传播中发生错误。请转发snapshot_fw.dump文件进行调试。")
                 raise ex
         else:
-            num_rendered, color, normal, radii, geomBuffer, binningBuffer, imgBuffer, depth, opacity, is_used = (
+            num_rendered, color,  radii, geomBuffer, binningBuffer, imgBuffer, depth, normal, opacity, is_used = (
                 _C.rasterize_gaussians(*args)
             )
 
@@ -250,6 +250,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                     grad_scales,         # 缩放参数的梯度
                     grad_rotations,      # 旋转参数的梯度
                     grad_tau,            # tau参数的梯度
+                    grad_normals,        # 法线的梯度
                 ) = _C.rasterize_gaussians_backward(*args)
             except Exception as ex:
                 torch.save(cpu_args, "snapshot_bw.dump")
@@ -266,6 +267,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 grad_scales,         # 缩放参数的梯度
                 grad_rotations,      # 旋转参数的梯度
                 grad_tau,            # tau参数的梯度
+                grad_normals,        # 法线的梯度
             ) = _C.rasterize_gaussians_backward(*args)
 
         # 处理tau梯度，分离为rho和theta的梯度
