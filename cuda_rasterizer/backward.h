@@ -54,11 +54,13 @@ namespace BACKWARD
 	 * @param n_contrib 每个像素的贡献高斯数量
 	 * @param dL_dpixels 像素颜色的损失梯度
 	 * @param dL_dpixels_depth 像素深度的损失梯度
+	 * @param dL_dpixels_normal 像素法向量的损失梯度
 	 * @param dL_dmean2D 输出：2D坐标的梯度
 	 * @param dL_dconic2D 输出：2D协方差逆矩阵的梯度
 	 * @param dL_dopacity 输出：不透明度的梯度
 	 * @param dL_dcolors 输出：颜色的梯度
 	 * @param dL_ddepths 输出：深度的梯度
+	 * @param dL_dnormals 输出：法向量的梯度
 	 */
 	void render(
 		const dim3 grid, const dim3 block,
@@ -70,15 +72,18 @@ namespace BACKWARD
 		const float4* conic_opacity,
 		const float* colors,
 		const float* depths,
+		const float3* normals,
 		const float* final_Ts,
 		const uint32_t* n_contrib,
 		const float* dL_dpixels,
 		const float* dL_dpixels_depth,
+		const float* dL_dpixels_normal,
 		float3* dL_dmean2D,
 		float4* dL_dconic2D,
 		float* dL_dopacity,
 		float* dL_dcolors,
-		float* dL_ddepths);
+		float* dL_ddepths,
+		float3* dL_dnormals);
 
 	/**
 	 * @brief 预处理阶段的反向传播函数
