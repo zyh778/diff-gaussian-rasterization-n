@@ -88,6 +88,7 @@ namespace CudaRasterizer
 		 * @param prefiltered 是否已预过滤高斯
 		 * @param out_color 输出颜色缓冲区
 		 * @param out_depth 输出深度缓冲区
+		 * @param out_normals 输出累积缓冲区	
 		 * @param out_opacity 输出不透明度缓冲区
 		 * @param radii 高斯投影半径（可选）
 		 * @param is_used 高斯使用标记（可选）
@@ -116,6 +117,7 @@ namespace CudaRasterizer
 			const bool prefiltered,
 			float* out_color,
 			float* out_depth,
+			float* out_normals,
 			float* out_opacity,
 			int* radii = nullptr,
 			int* is_used = nullptr,
@@ -188,11 +190,13 @@ namespace CudaRasterizer
 			char* image_buffer,
 			const float* dL_dpix,
 			const float* dL_dpix_depth,
+			const float* dL_dpix_normal,
 			float* dL_dmean2D,
 			float* dL_dconic,
 			float* dL_dopacity,
 			float* dL_dcolor,
 			float* dL_ddepths,
+			float* dL_dnormals,
 			float* dL_dmean3D,
 			float* dL_dcov3D,
 			float* dL_dsh,

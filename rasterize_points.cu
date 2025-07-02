@@ -39,7 +39,7 @@ std::function<char*(size_t N)> resizeFunctional(torch::Tensor& t) {
 // 高斯点云的前向渲染函数
 // 输入包括:背景图、3D点位置、颜色、不透明度、尺度、旋转等参数
 // 输出渲染结果、深度图和其他缓冲信息
-std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
 	const torch::Tensor& background,    // 背景图像
 	const torch::Tensor& means3D,       // 3D点云位置
@@ -81,8 +81,8 @@ RasterizeGaussiansCUDA(
   torch::Tensor radii = torch::full({P}, 0, means3D.options().dtype(torch::kInt32));// 点云半径
   torch::Tensor is_used = torch::full({P}, 0, means3D.options().dtype(torch::kInt32));// 使用标志
   torch::Tensor out_depth = torch::full({1, H, W}, 0.0, float_opts);               // 输出深度图
+  torch::Tensor out_normal = torch::full({3, H, W}, 0.0, float_opts);              // 输出法线图
   torch::Tensor out_opacity = torch::full({1, H, W}, 0.0, float_opts);             // 输出不透明度图
-  
   // 创建CUDA设备上的缓冲区
   torch::Device device(torch::kCUDA);
   torch::TensorOptions options(torch::kByte);
@@ -130,6 +130,7 @@ RasterizeGaussiansCUDA(
 		prefiltered,
 		out_color.contiguous().data<float>(),
 		out_depth.contiguous().data<float>(),
+		out_normal.contiguous().data<float>(),
 		out_opacity.contiguous().data<float>(),
 		radii.contiguous().data<int>(),
 		is_used.contiguous().data<int>(),
@@ -137,12 +138,12 @@ RasterizeGaussiansCUDA(
   }
   
   // 返回渲染结果
-  return std::make_tuple(rendered, out_color, radii, geomBuffer, binningBuffer, imgBuffer, out_depth, out_opacity, is_used);
+  return std::make_tuple(rendered, out_color, radii, geomBuffer, binningBuffer, imgBuffer, out_depth, out_normal,out_opacity, is_used);
 }
 
 // 高斯点云的反向传播函数
 // 计算各个参数对应的梯度
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
  RasterizeGaussiansBackwardCUDA(
  	const torch::Tensor& background,    // 背景图像
 	const torch::Tensor& means3D,       // 3D点位置
@@ -159,6 +160,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const float tan_fovy,              // 垂直视场角的正切
     const torch::Tensor& dL_dout_color, // 颜色的梯度
 	const torch::Tensor& dL_dout_depths,// 深度的梯度
+	const torch::Tensor& dL_dout_normal,// 法线的梯度
 	const torch::Tensor& sh,           // 球谐系数
 	const int degree,                  // 球谐度数
 	const torch::Tensor& campos,       // 相机位置
@@ -192,6 +194,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
   torch::Tensor dL_dscales = torch::zeros({P, 3}, means3D.options());         // 尺度梯度
   torch::Tensor dL_drotations = torch::zeros({P, 4}, means3D.options());      // 旋转梯度
   torch::Tensor dL_dtau = torch::zeros({P,6}, means3D.options());             // tau梯度
+  torch::Tensor dL_dnormals = torch::zeros({P, 3}, means3D.options());        // 法线梯度
   
   // 执行反向传播
   if(P != 0)
@@ -218,11 +221,13 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  reinterpret_cast<char*>(imageBuffer.contiguous().data_ptr()),
 	  dL_dout_color.contiguous().data<float>(),
 	  dL_dout_depths.contiguous().data<float>(),
+	  dL_dout_normal.contiguous().data<float>(),
 	  dL_dmeans2D.contiguous().data<float>(),
 	  dL_dconic.contiguous().data<float>(),  
 	  dL_dopacity.contiguous().data<float>(),
 	  dL_dcolors.contiguous().data<float>(),
 	  dL_ddepths.contiguous().data<float>(),
+	  dL_dnormals.contiguous().data<float>(),
 	  dL_dmeans3D.contiguous().data<float>(),
 	  dL_dcov3D.contiguous().data<float>(),
 	  dL_dsh.contiguous().data<float>(),
@@ -233,7 +238,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
   }
 
   // 返回计算的梯度
-  return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dsh, dL_dscales, dL_drotations, dL_dtau);
+  return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dsh, dL_dscales, dL_drotations, dL_dtau, dL_dnormals);
 }
 
 // 标记可见点云的函数

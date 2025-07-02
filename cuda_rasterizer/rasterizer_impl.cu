@@ -240,6 +240,7 @@ CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& ch
 	obtain(chunk, geom.cov3D, P * 6, 128);           // 分配3D协方差矩阵缓冲区
 	obtain(chunk, geom.conic_opacity, P, 128);       // 分配圆锥不透明度缓冲区
 	obtain(chunk, geom.rgb, P * 3, 128);             // 分配RGB颜色缓冲区
+	obtain(chunk, geom.normals, P, 128);             // 分配法线向量缓冲区
 	obtain(chunk, geom.tiles_touched, P, 128);       // 分配瓦片接触数缓冲区
 	// 计算前缀和扫描所需的临时存储大小
 	cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
@@ -324,6 +325,7 @@ CudaRasterizer::BinningState CudaRasterizer::BinningState::fromChunk(char*& chun
  * @param prefiltered 是否预过滤
  * @param out_color 输出颜色缓冲区
  * @param out_depth 输出深度缓冲区
+ * @param out_normals 输出累积缓冲区	
  * @param out_opacity 输出不透明度缓冲区
  * @param radii 高斯半径缓冲区
  * @param is_used 使用标记缓冲区
@@ -352,6 +354,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const bool prefiltered,
 	float* out_color,
 	float* out_depth,
+	float* out_normals,
 	float* out_opacity,
 	int* radii,
 	int* is_used,
@@ -387,7 +390,7 @@ int CudaRasterizer::Rasterizer::forward(
 		throw std::runtime_error("For non-RGB, provide precomputed Gaussian colors!");
 	}
 
-	// 对每个高斯进行预处理（变换、边界计算、球谐函数转RGB）
+	// 对每个高斯进行预处理（变换、边界计算、球谐函数转RGB、法线计算）
 	CHECK_CUDA(FORWARD::preprocess(
 		P, D, M,
 		means3D,
@@ -409,6 +412,7 @@ int CudaRasterizer::Rasterizer::forward(
 		geomState.depths,
 		geomState.cov3D,
 		geomState.rgb,
+		geomState.normals,
 		geomState.conic_opacity,
 		tile_grid,
 		geomState.tiles_touched,
@@ -472,6 +476,7 @@ int CudaRasterizer::Rasterizer::forward(
 		width, height,
 		geomState.means2D,
 		feature_ptr,
+		geomState.normals,
 		geomState.conic_opacity,
 		imgState.accum_alpha,
 		imgState.n_contrib,
@@ -479,6 +484,7 @@ int CudaRasterizer::Rasterizer::forward(
 		out_color,
 		geomState.depths,
 		out_depth, 
+		out_normals,
 		out_opacity,
 		is_used
 		), debug)
@@ -554,11 +560,13 @@ void CudaRasterizer::Rasterizer::backward(
 	char* img_buffer,
 	const float* dL_dpix,
 	const float* dL_dpix_depth,
+	const float* dL_dpix_normal,
 	float* dL_dmean2D,
 	float* dL_dconic,
 	float* dL_dopacity,
 	float* dL_dcolor,
 	float* dL_ddepth,
+	float* dL_dnormals,
 	float* dL_dmean3D,
 	float* dL_dcov3D,
 	float* dL_dsh,
@@ -602,15 +610,18 @@ void CudaRasterizer::Rasterizer::backward(
 		geomState.conic_opacity,
 		color_ptr,
 		depth_ptr,
+		geomState.normals,
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		dL_dpix,
 		dL_dpix_depth,
+		dL_dpix_normal,
 		(float3*)dL_dmean2D,
 		(float4*)dL_dconic,
 		dL_dopacity,
 		dL_dcolor,
-		dL_ddepth
+		dL_ddepth,
+		(float3*)dL_dnormals
 	), debug)
 
 	// 处理预处理的其余部分。是给定了预计算的协方差

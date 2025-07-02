@@ -35,7 +35,7 @@
 // - campos: 相机位置
 // - prefiltered: 是否预过滤
 // - debug: 是否开启调试模式
-std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
 	const torch::Tensor& background,
 	const torch::Tensor& means3D,
@@ -63,11 +63,12 @@ RasterizeGaussiansCUDA(
 // - radii: 高斯点的半径
 // - dL_dout_color: 输出颜色关于损失的梯度
 // - dL_dout_depth: 输出深度关于损失的梯度
+// - dL_dout_normal: 输出法线关于损失的梯度
 // - geomBuffer: 几何缓冲区
 // - R: 光栅化范围参数
 // - binningBuffer: 空间划分缓冲区
 // - imageBuffer: 图像缓冲区
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
  RasterizeGaussiansBackwardCUDA(
  	const torch::Tensor& background,
 	const torch::Tensor& means3D,
@@ -84,6 +85,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const float tan_fovy,
     const torch::Tensor& dL_dout_color,
     const torch::Tensor& dL_dout_depth,
+    const torch::Tensor& dL_dout_normal,
 	const torch::Tensor& sh,
 	const int degree,
 	const torch::Tensor& campos,
