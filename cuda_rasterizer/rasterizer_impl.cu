@@ -483,7 +483,7 @@ int CudaRasterizer::Rasterizer::forward(
 		background,
 		out_color,
 		geomState.depths,
-		out_depth, 
+		out_depth,
 		out_normals,
 		out_opacity,
 		is_used
