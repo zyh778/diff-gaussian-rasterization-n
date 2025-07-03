@@ -747,7 +747,7 @@ renderCUDA(
 	const float4* __restrict__ conic_opacity,
 	const float* __restrict__ colors,
 	const float* __restrict__ depths,
-	const float3* __restrict__ normals,
+	const float* __restrict__ normals,
 	const float* __restrict__ final_Ts,
 	const uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ dL_dpixels,
@@ -758,7 +758,7 @@ renderCUDA(
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
 	float* __restrict__ dL_ddepths,
-	float3* __restrict__ dL_dnormals)
+	float* __restrict__ dL_dnormals)
 {
 	// We rasterize again. Compute necessary block info.
 	auto block = cg::this_thread_block();
@@ -783,12 +783,12 @@ renderCUDA(
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
 	__shared__ float collected_colors[C * BLOCK_SIZE];
 	__shared__ float collected_depths[BLOCK_SIZE];
-	__shared__ float3 collected_normals[BLOCK_SIZE];
+	__shared__ float collected_normals[3 * BLOCK_SIZE];
 
 	__shared__ float2 dL_dmean2D_shared[BLOCK_SIZE];
 	__shared__ float3 dL_dcolors_shared[BLOCK_SIZE];
 	__shared__ float dL_ddepths_shared[BLOCK_SIZE];
-	__shared__ float3 dL_dnormals_shared[BLOCK_SIZE];
+	__shared__ float dL_dnormals_shared[3 * BLOCK_SIZE];
 	__shared__ float dL_dopacity_shared[BLOCK_SIZE];
 	__shared__ float4 dL_dconic2D_shared[BLOCK_SIZE];
 
@@ -849,7 +849,9 @@ renderCUDA(
 				
 			}
 			collected_depths[tid] = depths[coll_id];
-			collected_normals[tid] = normals[coll_id];
+			collected_normals[tid * 3 + 0] = normals[coll_id * 3 + 0];
+			collected_normals[tid * 3 + 1] = normals[coll_id * 3 + 1];
+			collected_normals[tid * 3 + 2] = normals[coll_id * 3 + 2];
 		}
 		for (int j = 0; j < min(BLOCK_SIZE, toDo); j++) {
 			block.sync();
@@ -918,7 +920,10 @@ renderCUDA(
 
 			// 法线梯度计算
             // 获取当前高斯的法线
-            const float3 normal = collected_normals[j];
+            float3 normal;
+            normal.x = collected_normals[j * 3 + 0];
+            normal.y = collected_normals[j * 3 + 1];
+            normal.z = collected_normals[j * 3 + 2];
 
             // 计算累积重建法线
             // 使用alpha混合公式:new_accum = last_alpha * last_normal + (1-last_alpha) * old_accum
@@ -940,9 +945,9 @@ renderCUDA(
             // 计算法线的梯度
             // dL_dnormal = dchannel_dcolor * dL_dpixel_normal
             // dchannel_dcolor是当前高斯对最终颜色的贡献权重
-            dL_dnormals_shared[tid].x = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.x;
-            dL_dnormals_shared[tid].y = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.y;
-            dL_dnormals_shared[tid].z = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.z;
+            dL_dnormals_shared[tid * 3 + 0] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.x;
+            dL_dnormals_shared[tid * 3 + 1] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.y;
+            dL_dnormals_shared[tid * 3 + 2] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.z;
 			dL_dalpha *= T;
 			// Update last alpha (to be used in the next iteration)
 			last_alpha = skip ? last_alpha : alpha;
@@ -986,7 +991,9 @@ renderCUDA(
 				float dL_dopacity_acc = dL_dopacity_shared[0];
 				float3 dL_dcolors_acc = dL_dcolors_shared[0];
 				float dL_ddepths_acc = dL_ddepths_shared[0];
-				float3 dL_dnormals_acc = dL_dnormals_shared[0];
+				float dL_dnormals_acc_x = dL_dnormals_shared[0];
+				float dL_dnormals_acc_y = dL_dnormals_shared[1];
+				float dL_dnormals_acc_z = dL_dnormals_shared[2];
 
 				atomicAdd(&dL_dmean2D[global_id].x, dL_dmean2D_acc.x);
 				atomicAdd(&dL_dmean2D[global_id].y, dL_dmean2D_acc.y);
@@ -998,9 +1005,9 @@ renderCUDA(
 				atomicAdd(&dL_dcolors[global_id * C + 1], dL_dcolors_acc.y);
 				atomicAdd(&dL_dcolors[global_id * C + 2], dL_dcolors_acc.z);
 				atomicAdd(&dL_ddepths[global_id], dL_ddepths_acc);
-				atomicAdd(&dL_dnormals[global_id].x, dL_dnormals_acc.x);
-				atomicAdd(&dL_dnormals[global_id].y, dL_dnormals_acc.y);
-				atomicAdd(&dL_dnormals[global_id].z, dL_dnormals_acc.z);
+				atomicAdd(&dL_dnormals[global_id * 3 + 0], dL_dnormals_acc_x);
+				atomicAdd(&dL_dnormals[global_id * 3 + 1], dL_dnormals_acc_y);
+				atomicAdd(&dL_dnormals[global_id * 3 + 2], dL_dnormals_acc_z);
 			}
 		}
 	}
@@ -1154,7 +1161,7 @@ void BACKWARD::render(
 	const float4* conic_opacity,
 	const float* colors,
 	const float* depths,
-	const float3* normals,
+	const float* normals,
 	const float* final_Ts,
 	const uint32_t* n_contrib,
 	const float* dL_dpixels,
@@ -1165,7 +1172,7 @@ void BACKWARD::render(
 	float* dL_dopacity,
 	float* dL_dcolors,
 	float* dL_ddepths,
-	float3* dL_dnormals)
+	float* dL_dnormals)
 {
 	// 启动渲染反向传播CUDA核函数
 	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
