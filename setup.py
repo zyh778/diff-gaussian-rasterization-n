@@ -32,16 +32,16 @@ os.path.dirname(os.path.abspath(__file__))
 # 包安装配置
 setup(
     # 包名称，用于pip安装时的标识
-    name="diff_gaussian_rasterization",
+    name="diff_gaussian_rasterization_n",
     
     # 指定要包含的Python包目录
-    packages=['diff_gaussian_rasterization'],
+    packages=['diff_gaussian_rasterization_n'],
     
     # 定义CUDA扩展模块
     ext_modules=[
         CUDAExtension(
             # 扩展模块的完整名称，_C表示这是一个C++扩展
-            name="diff_gaussian_rasterization._C",
+            name="diff_gaussian_rasterization_n._C",
             
             # 需要编译的源文件列表
             sources=[
