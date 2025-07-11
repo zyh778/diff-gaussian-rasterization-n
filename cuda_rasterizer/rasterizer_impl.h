@@ -70,7 +70,7 @@ namespace CudaRasterizer
 		float* cov3D;                  ///< 3D协方差矩阵数组
 		float4* conic_opacity;         ///< 2D协方差逆矩阵和不透明度
 		float* rgb;                    ///< RGB颜色数组
-		float3* normals;               ///< 法线向量数组
+		float* normals;                ///< 法线向量数组
 		uint32_t* point_offsets;       ///< 点的偏移量数组
 		uint32_t* tiles_touched;       ///< 每个高斯覆盖的瓦片数量
 

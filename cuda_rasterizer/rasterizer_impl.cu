@@ -240,7 +240,7 @@ CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& ch
 	obtain(chunk, geom.cov3D, P * 6, 128);           // 分配3D协方差矩阵缓冲区
 	obtain(chunk, geom.conic_opacity, P, 128);       // 分配圆锥不透明度缓冲区
 	obtain(chunk, geom.rgb, P * 3, 128);             // 分配RGB颜色缓冲区
-	obtain(chunk, geom.normals, P, 128);             // 分配法线向量缓冲区
+	obtain(chunk, geom.normals, P * 3, 128);         // 分配法线向量缓冲区
 	obtain(chunk, geom.tiles_touched, P, 128);       // 分配瓦片接触数缓冲区
 	// 计算前缀和扫描所需的临时存储大小
 	cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
@@ -621,7 +621,7 @@ void CudaRasterizer::Rasterizer::backward(
 		dL_dopacity,
 		dL_dcolor,
 		dL_ddepth,
-		(float3*)dL_dnormals
+		dL_dnormals
 	), debug)
 
 	// 处理预处理的其余部分。是给定了预计算的协方差

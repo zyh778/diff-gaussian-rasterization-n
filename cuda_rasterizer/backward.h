@@ -72,7 +72,7 @@ namespace BACKWARD
 		const float4* conic_opacity,
 		const float* colors,
 		const float* depths,
-		const float3* normals,
+		const float* normals,
 		const float* final_Ts,
 		const uint32_t* n_contrib,
 		const float* dL_dpixels,
@@ -83,7 +83,7 @@ namespace BACKWARD
 		float* dL_dopacity,
 		float* dL_dcolors,
 		float* dL_ddepths,
-		float3* dL_dnormals);
+		float* dL_dnormals);
 
 	/**
 	 * @brief 预处理阶段的反向传播函数
