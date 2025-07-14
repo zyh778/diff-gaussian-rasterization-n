@@ -342,6 +342,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* means3D,
 	const float* shs,
 	const float* colors_precomp,
+	const float* normals_precomp,
 	const float* opacities,
 	const float* scales,
 	const float scale_modifier,
@@ -402,6 +403,7 @@ int CudaRasterizer::Rasterizer::forward(
 		geomState.clamped,
 		cov3D_precomp,
 		colors_precomp,
+		normals_precomp,
 		viewmatrix, projmatrix,
 		(glm::vec3*)cam_pos,
 		width, height,
@@ -573,6 +575,7 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dscale,
 	float* dL_drot,
 	float* dL_dtau,
+	const float* normals_precomp,
 	bool debug)
 {
 	// 从缓冲区恢复状态对象

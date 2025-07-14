@@ -59,6 +59,7 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& sh,           // 球谐系数
 	const int degree,                  // 球谐度数
 	const torch::Tensor& campos,       // 相机位置
+	const torch::Tensor& normals_precomp, // 预计算的法线
 	const bool prefiltered,            // 是否预过滤
 	const bool debug)                  // 是否开启调试
 {
@@ -117,6 +118,7 @@ RasterizeGaussiansCUDA(
 		means3D.contiguous().data<float>(),
 		sh.contiguous().data_ptr<float>(),
 		colors.contiguous().data<float>(), 
+		normals_precomp.contiguous().data<float>(),
 		opacity.contiguous().data<float>(), 
 		scales.contiguous().data_ptr<float>(),
 		scale_modifier,
@@ -164,6 +166,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& sh,           // 球谐系数
 	const int degree,                  // 球谐度数
 	const torch::Tensor& campos,       // 相机位置
+	const torch::Tensor& normals_precomp, // 预计算的法线
 	const torch::Tensor& geomBuffer,   // 几何缓冲区
 	const int R,                       // 渲染的点数
 	const torch::Tensor& binningBuffer,// 分箱缓冲区
@@ -234,6 +237,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  dL_dscales.contiguous().data<float>(),
 	  dL_drotations.contiguous().data<float>(),
       dL_dtau.contiguous().data<float>(),
+      normals_precomp.contiguous().data<float>(),
 	  debug);
   }
 

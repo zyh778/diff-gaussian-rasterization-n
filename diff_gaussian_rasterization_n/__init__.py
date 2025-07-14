@@ -59,6 +59,7 @@ def rasterize_gaussians(
     theta,
     rho,
     raster_settings,
+    normals_precomp=None,
 ):
     """
     高斯光栅化的主要接口函数
@@ -77,6 +78,7 @@ def rasterize_gaussians(
         theta: MCMC相关的theta参数
         rho: MCMC相关的rho参数
         raster_settings: 光栅化设置对象
+        normals_precomp: 预计算的法线 [N, 3]，默认为None
         
     Returns:
         tuple: (color, radii, depth, normal, opacity, is_used)
@@ -87,6 +89,9 @@ def rasterize_gaussians(
             - opacity: 不透明度图
             - is_used: 是否被使用的标记
     """
+    if normals_precomp is None:
+        normals_precomp = torch.Tensor([])
+        
     return _RasterizeGaussians.apply(
         means3D,
         means2D,
@@ -99,6 +104,7 @@ def rasterize_gaussians(
         theta,
         rho,
         raster_settings,
+        normals_precomp,
     )
 
 
@@ -123,6 +129,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         theta,
         rho,
         raster_settings,
+        normals_precomp=None,
     ):
         """
         前向传播：执行高斯光栅化渲染
@@ -155,6 +162,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             sh,                              # 球谐函数系数
             raster_settings.sh_degree,       # 球谐函数阶数
             raster_settings.campos,          # 相机位置
+            normals_precomp,                 # 预计算的法线
             raster_settings.prefiltered,     # 是否预过滤
             raster_settings.debug,           # 调试模式
         )
@@ -179,7 +187,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         ctx.raster_settings = raster_settings  # 保存光栅化设置
         ctx.num_rendered = num_rendered         # 保存渲染的高斯数量
         ctx.save_for_backward(
-            colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer
+            colors_precomp, means3D, scales, rotations, cov3Ds_precomp, normals_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer
         )
         return color, radii, depth, normal, opacity, is_used
 
@@ -204,7 +212,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         # 从上下文中恢复必要的值
         num_rendered = ctx.num_rendered        # 渲染的高斯数量
         raster_settings = ctx.raster_settings  # 光栅化设置
-        colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer = (
+        colors_precomp, means3D, scales, rotations, cov3Ds_precomp, normals_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer = (
             ctx.saved_tensors  # 前向传播保存的张量
         )
 
@@ -370,6 +378,7 @@ class GaussianRasterizer(nn.Module):
         opacities,
         shs=None,
         colors_precomp=None,
+        normals_precomp=None,
         scales=None,
         rotations=None,
         cov3D_precomp=None,
@@ -385,6 +394,7 @@ class GaussianRasterizer(nn.Module):
             opacities: 不透明度 [N, 1]
             shs: 球谐函数系数 [N, K, 3]，与colors_precomp二选一
             colors_precomp: 预计算的颜色 [N, 3]，与shs二选一
+            normals_precomp: 预计算的法线 [N, 3]，如果不提供则根据缩放和旋转计算
             scales: 缩放参数 [N, 3]，与cov3D_precomp二选一
             rotations: 旋转四元数 [N, 4]，与cov3D_precomp二选一
             cov3D_precomp: 预计算的3D协方差矩阵 [N, 6]，与scales/rotations二选一
@@ -412,6 +422,8 @@ class GaussianRasterizer(nn.Module):
             shs = torch.Tensor([])              # 球谐函数系数
         if colors_precomp is None:
             colors_precomp = torch.Tensor([])   # 预计算颜色
+        if normals_precomp is None:
+            normals_precomp = torch.Tensor([])  # 预计算法线
 
         if scales is None:
             scales = torch.Tensor([])           # 缩放参数
@@ -437,6 +449,7 @@ class GaussianRasterizer(nn.Module):
             theta,
             rho,
             raster_settings,
+            normals_precomp,
         )
 
 

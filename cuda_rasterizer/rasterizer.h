@@ -105,6 +105,7 @@ namespace CudaRasterizer
 			const float* means3D,
 			const float* shs,
 			const float* colors_precomp,
+			const float* normals_precomp,
 			const float* opacities,
 			const float* scales,
 			const float scale_modifier,
@@ -203,6 +204,7 @@ namespace CudaRasterizer
 			float* dL_dscale,
 			float* dL_drot,
 			float* dL_dtau,
+			const float* normals_precomp,
 			bool debug);
 	};
 };
