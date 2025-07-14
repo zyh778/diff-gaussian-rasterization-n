@@ -75,6 +75,7 @@ namespace CudaRasterizer
 		 * @param means3D 3D高斯中心点坐标
 		 * @param shs 球谐函数系数（用于颜色计算）
 		 * @param colors_precomp 预计算的颜色（可选，替代球谐函数）
+		 * @param normals_precomp 预计算的法线（可选）
 		 * @param opacities 高斯不透明度值
 		 * @param scales 高斯缩放参数
 		 * @param scale_modifier 全局缩放修饰符
@@ -140,6 +141,7 @@ namespace CudaRasterizer
 		 * @param means3D 3D高斯中心点坐标
 		 * @param shs 球谐函数系数
 		 * @param colors_precomp 预计算的颜色（可选）
+		 * @param normals_precomp 预计算的法线（可选）
 		 * @param scales 高斯缩放参数
 		 * @param scale_modifier 全局缩放修饰符
 		 * @param rotations 高斯旋转四元数
@@ -161,6 +163,7 @@ namespace CudaRasterizer
 		 * @param dL_dopacity 输出：不透明度梯度
 		 * @param dL_dcolor 输出：颜色梯度
 		 * @param dL_ddepths 输出：深度梯度
+		 * @param dL_dnormals 输出：法向量梯度
 		 * @param dL_dmean3D 输出：3D中心点梯度
 		 * @param dL_dcov3D 输出：3D协方差矩阵梯度
 		 * @param dL_dsh 输出：球谐函数系数梯度
@@ -176,6 +179,7 @@ namespace CudaRasterizer
 			const float* means3D,
 			const float* shs,
 			const float* colors_precomp,
+			const float* normals_precomp,
 			const float* scales,
 			const float scale_modifier,
 			const float* rotations,
@@ -204,7 +208,6 @@ namespace CudaRasterizer
 			float* dL_dscale,
 			float* dL_drot,
 			float* dL_dtau,
-			const float* normals_precomp,
 			bool debug);
 	};
 };

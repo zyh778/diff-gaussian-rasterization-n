@@ -97,6 +97,7 @@ namespace BACKWARD
 	 * @param means 高斯的3D中心位置
 	 * @param radii 高斯在屏幕空间的半径
 	 * @param shs 球谐函数系数
+	 * @param normals_precomp 预计算的法向量
 	 * @param clamped 球谐函数是否被截断
 	 * @param scales 高斯的缩放参数
 	 * @param rotations 高斯的旋转四元数
@@ -115,6 +116,7 @@ namespace BACKWARD
 	 * @param dL_dmeans 输出：3D位置的梯度
 	 * @param dL_dcolor 输出：颜色的梯度
 	 * @param dL_ddepth 输出：深度的梯度
+	 * @param dL_dnormal 输出：法向量的梯度	
 	 * @param dL_dcov3D 输出：3D协方差的梯度
 	 * @param dL_dsh 输出：球谐函数系数的梯度
 	 * @param dL_dscale 输出：缩放参数的梯度
@@ -126,6 +128,7 @@ namespace BACKWARD
 		const float3* means,
 		const int* radii,
 		const float* shs,
+		const float* normals_precomp,
 		const bool* clamped,
 		const glm::vec3* scales,
 		const glm::vec4* rotations,
@@ -142,6 +145,7 @@ namespace BACKWARD
 		glm::vec3* dL_dmeans,
 		float* dL_dcolor,
 		float* dL_ddepth,
+		float* dL_dnormal,
 		float* dL_dcov3D,
 		float* dL_dsh,
 		glm::vec3* dL_dscale,

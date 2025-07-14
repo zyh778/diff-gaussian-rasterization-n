@@ -40,7 +40,7 @@ namespace FORWARD
 	 * - 坐标变换（世界空间到屏幕空间）
 	 * - 协方差矩阵计算
 	 * - 颜色计算（球谐函数或预计算颜色）
-	 * - 法线计算（基于最小尺度轴和旋转）
+	 * - 法线计算（预计算法线或默认法线）
 	 * - 视锥体裁剪
 	 * - 瓦片覆盖计算
 	 * 
@@ -56,6 +56,7 @@ namespace FORWARD
 	 * @param clamped 输出：球谐函数是否被截断
 	 * @param cov3D_precomp 预计算的3D协方差矩阵（可选）
 	 * @param colors_precomp 预计算的颜色（可选）
+	 * @param normals_precomp 预计算的法线（可选）
 	 * @param viewmatrix 视图变换矩阵
 	 * @param projmatrix 投影变换矩阵
 	 * @param cam_pos 相机位置

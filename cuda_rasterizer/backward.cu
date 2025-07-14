@@ -30,6 +30,9 @@
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
+
+
+
 /**
  * @brief 球谐函数到RGB颜色转换的反向传播
  * 
@@ -536,7 +539,7 @@ __device__ void computeCov3D(int idx, const glm::vec3 scale, float mod, const gl
  * - 球谐函数到RGB颜色转换的反向传播
  * - 三维协方差矩阵计算的反向传播
  * 
- * @tparam C 颜色通道数
+ * @param C 颜色通道数
  * @param P 高斯数量
  * @param D 球谐函数维度
  * @param M 最大球谐函数阶数
@@ -555,6 +558,7 @@ __device__ void computeCov3D(int idx, const glm::vec3 scale, float mod, const gl
  * @param dL_dmeans 输出：损失相对于高斯中心的梯度
  * @param dL_dcolor 输出：损失相对于颜色的梯度
  * @param dL_ddepth 输出：损失相对于深度的梯度
+ * @param dL_dnormal 输出：损失相对于法向量的梯度
  * @param dL_dcov3D 输出：损失相对于三维协方差矩阵的梯度
  * @param dL_dsh 输出：损失相对于球谐函数系数的梯度
  * @param dL_dscale 输出：损失相对于尺度参数的梯度
@@ -567,6 +571,7 @@ __global__ void preprocessCUDA(
 	const float3* means,
 	const int* radii,
 	const float* shs,
+	const float* normals_precomp,
 	const bool* clamped,
 	const glm::vec3* scales,
 	const glm::vec4* rotations,
@@ -579,6 +584,7 @@ __global__ void preprocessCUDA(
 	glm::vec3* dL_dmeans,
 	float* dL_dcolor,
 	float *dL_ddepth,
+	float* dL_dnormal,	
 	float* dL_dcov3D,
 	float* dL_dsh,
 	glm::vec3* dL_dscale,
@@ -783,12 +789,12 @@ renderCUDA(
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
 	__shared__ float collected_colors[C * BLOCK_SIZE];
 	__shared__ float collected_depths[BLOCK_SIZE];
-	__shared__ float collected_normals[3 * BLOCK_SIZE];
+	__shared__ float collected_normals[C * BLOCK_SIZE];
 
 	__shared__ float2 dL_dmean2D_shared[BLOCK_SIZE];
 	__shared__ float3 dL_dcolors_shared[BLOCK_SIZE];
 	__shared__ float dL_ddepths_shared[BLOCK_SIZE];
-	__shared__ float dL_dnormals_shared[3 * BLOCK_SIZE];
+	__shared__ float3 dL_dnormals_shared[BLOCK_SIZE];
 	__shared__ float dL_dopacity_shared[BLOCK_SIZE];
 	__shared__ float4 dL_dconic2D_shared[BLOCK_SIZE];
 
@@ -803,26 +809,23 @@ renderCUDA(
 	const int last_contributor = inside ? n_contrib[pix_id] : 0;
 
 	float accum_rec[C] = { 0 };
+	float accum_rec_normal[C] = { 0 }; // 添加法线累积变量
 	float dL_dpixel[C] = { 0 };
+	float dL_dpixel_normal[C] = { 0 };
 	float accum_rec_depth = 0;
 	float dL_dpixel_depth = 0;
-	float3 accum_rec_normal = {0.0f, 0.0f, 0.0f};
-	float3 dL_dpixel_normal = {0.0f, 0.0f, 0.0f};
 	if (inside) {
 		#pragma unroll
 		for (int i = 0; i < C; i++) {
 			dL_dpixel[i] = dL_dpixels[i * H * W + pix_id];
+			dL_dpixel_normal[i] = dL_dpixels_normal[i * H * W + pix_id];
 		}
-		dL_dpixel_depth = dL_dpixels_depth[pix_id];
-		dL_dpixel_normal.x = dL_dpixels_normal[0 * H * W + pix_id];
-		dL_dpixel_normal.y = dL_dpixels_normal[1 * H * W + pix_id];
-		dL_dpixel_normal.z = dL_dpixels_normal[2 * H * W + pix_id];
+		dL_dpixel_depth = dL_dpixels_depth[pix_id];	
 	}
-
 	float last_alpha = 0.f;
 	float last_color[C] = { 0.f };
 	float last_depth = 0.f;
-	float3 last_normal = {0.0f, 0.0f, 0.0f};
+	float last_normal[C] = { 0.0f };
 
 	// Gradient of pixel coordinate w.r.t. normalized 
 	// screen-space viewport corrdinates (-1 to 1)
@@ -846,12 +849,9 @@ renderCUDA(
 			#pragma unroll
 			for (int i = 0; i < C; i++) {
 				collected_colors[i * BLOCK_SIZE + tid] = colors[coll_id * C + i];
-				
+				collected_normals[i * BLOCK_SIZE + tid] = normals[coll_id * C + i];
 			}
 			collected_depths[tid] = depths[coll_id];
-			collected_normals[tid * 3 + 0] = normals[coll_id * 3 + 0];
-			collected_normals[tid * 3 + 1] = normals[coll_id * 3 + 1];
-			collected_normals[tid * 3 + 2] = normals[coll_id * 3 + 2];
 		}
 		for (int j = 0; j < min(BLOCK_SIZE, toDo); j++) {
 			block.sync();
@@ -889,6 +889,7 @@ renderCUDA(
 			T = skip ? T : T / (1.f - alpha);
 
 			const float dchannel_dcolor = alpha * T;
+			const float dchannel_dnormal = alpha * T;
 
 			// Propagate gradients to per-Gaussian colors and keep
 			// gradients w.r.t. alpha (blending factor for a Gaussian/pixel
@@ -896,58 +897,37 @@ renderCUDA(
 			float dL_dalpha = 0.0f;
 			const int global_id = collected_id[j];
 			float local_dL_dcolors[3];
+			float local_dL_dnormals[3];
 			#pragma unroll
 			for (int ch = 0; ch < C; ch++)
 			{
 				const float c = collected_colors[ch * BLOCK_SIZE + j];
+				const float n = collected_normals[ch * BLOCK_SIZE + j];
 				// Update last color (to be used in the next iteration)
 				accum_rec[ch] = skip ? accum_rec[ch] : last_alpha * last_color[ch] + (1.f - last_alpha) * accum_rec[ch];
+				accum_rec_normal[ch] = skip ? accum_rec_normal[ch] : last_alpha * last_normal[ch] + (1.f - last_alpha) * accum_rec_normal[ch];
 				last_color[ch] = skip ? last_color[ch] : c;
+				last_normal[ch] = skip ? last_normal[ch] : n;
 
 				const float dL_dchannel = dL_dpixel[ch];
+				const float dL_dnormal = dL_dpixel_normal[ch];
 				dL_dalpha += (c - accum_rec[ch]) * dL_dchannel;
 				local_dL_dcolors[ch] = skip ? 0.0f : dchannel_dcolor * dL_dchannel;
+				local_dL_dnormals[ch] = skip ? 0.0f : dchannel_dnormal * dL_dnormal;
 			}
 			dL_dcolors_shared[tid].x = local_dL_dcolors[0];
 			dL_dcolors_shared[tid].y = local_dL_dcolors[1];
 			dL_dcolors_shared[tid].z = local_dL_dcolors[2];
 
+			dL_dnormals_shared[tid].x = local_dL_dnormals[0];
+			dL_dnormals_shared[tid].y = local_dL_dnormals[1];
+			dL_dnormals_shared[tid].z = local_dL_dnormals[2];
 			const float depth = collected_depths[j];
 			accum_rec_depth = skip ? accum_rec_depth : last_alpha * last_depth + (1.f - last_alpha) * accum_rec_depth;
 			last_depth = skip ? last_depth : depth;
 			dL_dalpha += (depth - accum_rec_depth) * dL_dpixel_depth;
 			dL_ddepths_shared[tid] = skip ? 0.f : dchannel_dcolor * dL_dpixel_depth;
 
-			// 法线梯度计算
-            // 获取当前高斯的法线
-            float3 normal;
-            normal.x = collected_normals[j * 3 + 0];
-            normal.y = collected_normals[j * 3 + 1];
-            normal.z = collected_normals[j * 3 + 2];
-
-            // 计算累积重建法线
-            // 使用alpha混合公式:new_accum = last_alpha * last_normal + (1-last_alpha) * old_accum
-            // 如果skip为true则保持原值不变
-            accum_rec_normal.x = skip ? accum_rec_normal.x : last_alpha * last_normal.x + (1.f - last_alpha) * accum_rec_normal.x;
-            accum_rec_normal.y = skip ? accum_rec_normal.y : last_alpha * last_normal.y + (1.f - last_alpha) * accum_rec_normal.y; 
-            accum_rec_normal.z = skip ? accum_rec_normal.z : last_alpha * last_normal.z + (1.f - last_alpha) * accum_rec_normal.z;
-
-            // 更新last_normal用于下一次迭代
-            last_normal = skip ? last_normal : normal;
-
-            // 计算alpha的梯度
-            // dL_dalpha += (normal - accum_rec_normal) * dL_dpixel_normal
-            // 这是因为alpha影响了法线的混合权重
-            dL_dalpha += (normal.x - accum_rec_normal.x) * dL_dpixel_normal.x;
-            dL_dalpha += (normal.y - accum_rec_normal.y) * dL_dpixel_normal.y;
-            dL_dalpha += (normal.z - accum_rec_normal.z) * dL_dpixel_normal.z;
-
-            // 计算法线的梯度
-            // dL_dnormal = dchannel_dcolor * dL_dpixel_normal
-            // dchannel_dcolor是当前高斯对最终颜色的贡献权重
-            dL_dnormals_shared[tid * 3 + 0] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.x;
-            dL_dnormals_shared[tid * 3 + 1] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.y;
-            dL_dnormals_shared[tid * 3 + 2] = skip ? 0.f : dchannel_dcolor * dL_dpixel_normal.z;
 			dL_dalpha *= T;
 			// Update last alpha (to be used in the next iteration)
 			last_alpha = skip ? last_alpha : alpha;
@@ -991,9 +971,7 @@ renderCUDA(
 				float dL_dopacity_acc = dL_dopacity_shared[0];
 				float3 dL_dcolors_acc = dL_dcolors_shared[0];
 				float dL_ddepths_acc = dL_ddepths_shared[0];
-				float dL_dnormals_acc_x = dL_dnormals_shared[0];
-				float dL_dnormals_acc_y = dL_dnormals_shared[1];
-				float dL_dnormals_acc_z = dL_dnormals_shared[2];
+				float3 dL_dnormals_acc = dL_dnormals_shared[0];
 
 				atomicAdd(&dL_dmean2D[global_id].x, dL_dmean2D_acc.x);
 				atomicAdd(&dL_dmean2D[global_id].y, dL_dmean2D_acc.y);
@@ -1004,10 +982,10 @@ renderCUDA(
 				atomicAdd(&dL_dcolors[global_id * C + 0], dL_dcolors_acc.x);
 				atomicAdd(&dL_dcolors[global_id * C + 1], dL_dcolors_acc.y);
 				atomicAdd(&dL_dcolors[global_id * C + 2], dL_dcolors_acc.z);
+				atomicAdd(&dL_dnormals[global_id * C + 0], dL_dnormals_acc.x);
+				atomicAdd(&dL_dnormals[global_id * C + 1], dL_dnormals_acc.y);
+				atomicAdd(&dL_dnormals[global_id * C + 2], dL_dnormals_acc.z);
 				atomicAdd(&dL_ddepths[global_id], dL_ddepths_acc);
-				atomicAdd(&dL_dnormals[global_id * 3 + 0], dL_dnormals_acc_x);
-				atomicAdd(&dL_dnormals[global_id * 3 + 1], dL_dnormals_acc_y);
-				atomicAdd(&dL_dnormals[global_id * 3 + 2], dL_dnormals_acc_z);
 			}
 		}
 	}
@@ -1028,6 +1006,7 @@ renderCUDA(
  * @param means3D 高斯中心位置数组
  * @param radii 高斯在屏幕空间的半径数组
  * @param shs 球谐函数系数数组
+ * @param normals_precomp 预计算的法线向量
  * @param clamped 颜色是否被截断的标志数组
  * @param scales 高斯尺度参数数组
  * @param rotations 高斯旋转四元数数组
@@ -1046,6 +1025,7 @@ renderCUDA(
  * @param dL_dmean3D 输出：损失相对于三维中心位置的梯度
  * @param dL_dcolor 输出：损失相对于颜色的梯度
  * @param dL_ddepth 输出：损失相对于深度的梯度
+ * @param dL_dnormal 输出：损失相对于法向量的梯度
  * @param dL_dcov3D 输出：损失相对于三维协方差矩阵的梯度
  * @param dL_dsh 输出：损失相对于球谐函数系数的梯度
  * @param dL_dscale 输出：损失相对于尺度参数的梯度
@@ -1057,6 +1037,7 @@ void BACKWARD::preprocess(
 	const float3* means3D,
 	const int* radii,
 	const float* shs,
+	const float* normals_precomp,
 	const bool* clamped,
 	const glm::vec3* scales,
 	const glm::vec4* rotations,
@@ -1073,6 +1054,7 @@ void BACKWARD::preprocess(
 	glm::vec3* dL_dmean3D,
 	float* dL_dcolor,
 	float* dL_ddepth,
+	float* dL_dnormal,
 	float* dL_dcov3D,
 	float* dL_dsh,
 	glm::vec3* dL_dscale,
@@ -1105,6 +1087,7 @@ void BACKWARD::preprocess(
 		(float3*)means3D,
 		radii,
 		shs,
+		normals_precomp,
 		clamped,
 		(glm::vec3*)scales,
 		(glm::vec4*)rotations,
@@ -1117,6 +1100,7 @@ void BACKWARD::preprocess(
 		(glm::vec3*)dL_dmean3D,
 		dL_dcolor,
 		dL_ddepth,
+		dL_dnormal,
 		dL_dcov3D,
 		dL_dsh,
 		dL_dscale,
@@ -1150,6 +1134,7 @@ void BACKWARD::preprocess(
  * @param dL_dopacity 输出：损失相对于不透明度的梯度
  * @param dL_dcolors 输出：损失相对于颜色的梯度
  * @param dL_ddepths 输出：损失相对于深度的梯度
+ * @param dL_dnormals 输出：损失相对于法向量的梯度
  */
 void BACKWARD::render(
 	const dim3 grid, const dim3 block,

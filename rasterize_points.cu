@@ -44,6 +44,7 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& background,    // 背景图像
 	const torch::Tensor& means3D,       // 3D点云位置
     const torch::Tensor& colors,        // 点云颜色
+    const torch::Tensor& normals_precomp, // 预计算的法线
     const torch::Tensor& opacity,       // 不透明度
 	const torch::Tensor& scales,        // 尺度
 	const torch::Tensor& rotations,     // 旋转
@@ -59,7 +60,6 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& sh,           // 球谐系数
 	const int degree,                  // 球谐度数
 	const torch::Tensor& campos,       // 相机位置
-	const torch::Tensor& normals_precomp, // 预计算的法线
 	const bool prefiltered,            // 是否预过滤
 	const bool debug)                  // 是否开启调试
 {
@@ -151,6 +151,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& means3D,       // 3D点位置
 	const torch::Tensor& radii,         // 点云半径
     const torch::Tensor& colors,        // 颜色
+    const torch::Tensor& normals_precomp, // 预计算的法线
 	const torch::Tensor& scales,        // 尺度
 	const torch::Tensor& rotations,     // 旋转
 	const float scale_modifier,         // 尺度修改器
@@ -166,7 +167,6 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& sh,           // 球谐系数
 	const int degree,                  // 球谐度数
 	const torch::Tensor& campos,       // 相机位置
-	const torch::Tensor& normals_precomp, // 预计算的法线
 	const torch::Tensor& geomBuffer,   // 几何缓冲区
 	const int R,                       // 渲染的点数
 	const torch::Tensor& binningBuffer,// 分箱缓冲区
@@ -208,6 +208,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  means3D.contiguous().data<float>(),
 	  sh.contiguous().data<float>(),
 	  colors.contiguous().data<float>(),
+	  normals_precomp.contiguous().data<float>(),
 	  scales.data_ptr<float>(),
 	  scale_modifier,
 	  rotations.data_ptr<float>(),
@@ -237,7 +238,6 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  dL_dscales.contiguous().data<float>(),
 	  dL_drotations.contiguous().data<float>(),
       dL_dtau.contiguous().data<float>(),
-      normals_precomp.contiguous().data<float>(),
 	  debug);
   }
 

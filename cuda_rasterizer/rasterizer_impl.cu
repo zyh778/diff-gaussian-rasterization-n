@@ -312,6 +312,7 @@ CudaRasterizer::BinningState CudaRasterizer::BinningState::fromChunk(char*& chun
  * @param means3D 3D高斯中心点坐标
  * @param shs 球谐函数系数
  * @param colors_precomp 预计算的颜色（可选）
+ * @param normals_precomp 预计算的法线（可选）
  * @param opacities 不透明度值
  * @param scales 缩放参数
  * @param scale_modifier 缩放修饰符
@@ -511,6 +512,7 @@ int CudaRasterizer::Rasterizer::forward(
  * @param means3D 3D高斯中心点坐标
  * @param shs 球谐函数系数
  * @param colors_precomp 预计算的颜色（可选）
+ * @param normals_precomp 预计算的法线（可选）
  * @param scales 缩放参数
  * @param scale_modifier 缩放修饰符
  * @param rotations 旋转四元数
@@ -547,6 +549,7 @@ void CudaRasterizer::Rasterizer::backward(
 	const float* means3D,
 	const float* shs,
 	const float* colors_precomp,
+	const float* normals_precomp,
 	const float* scales,
 	const float scale_modifier,
 	const float* rotations,
@@ -575,7 +578,6 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dscale,
 	float* dL_drot,
 	float* dL_dtau,
-	const float* normals_precomp,
 	bool debug)
 {
 	// 从缓冲区恢复状态对象
@@ -635,6 +637,7 @@ void CudaRasterizer::Rasterizer::backward(
 		(float3*)means3D,
 		radii,
 		shs,
+		normals_precomp,
 		geomState.clamped,
 		(glm::vec3*)scales,
 		(glm::vec4*)rotations,
@@ -651,6 +654,7 @@ void CudaRasterizer::Rasterizer::backward(
 		(glm::vec3*)dL_dmean3D,
 		dL_dcolor,
 		dL_ddepth,
+		dL_dnormals,
 		dL_dcov3D,
 		dL_dsh,
 		(glm::vec3*)dL_dscale,
